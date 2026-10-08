@@ -12,10 +12,17 @@ services:
   nextcloud:
 {% if install_authentik | default(false) and (tenant_domain_is_local | default(true) | bool) %}
     # mkcert CA conditional — local TLDs only. Nextcloud's PHP curl trusts
-    # /usr/local/share/ca-certificates/* via the base image's
-    # update-ca-certificates entrypoint hook.
+    # /usr/local/share/ca-certificates/* only after update-ca-certificates,
+    # which nextcloud:33 does not run itself — see the wrapper below (#53).
     volumes:
       - {{ stacks_dir }}/shared-certs/rootCA.pem:/usr/local/share/ca-certificates/mkcert-ca.crt:ro
+{% endif %}
+{% if install_authentik | default(false) and (tenant_domain_is_local | default(true) | bool) %}
+    # The mount above is only an INPUT to update-ca-certificates; this image
+    # never runs it, so PHP/curl did not trust auth.<tld> and OIDC failed (#53).
+    # Same wrapper as vaultwarden-base; exec keeps the image's init as PID 1.
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["update-ca-certificates >/dev/null 2>&1; exec /entrypoint.sh apache2-foreground"]
 {% endif %}
     environment:
       _NOS_PLUGIN: "nextcloud-base"
